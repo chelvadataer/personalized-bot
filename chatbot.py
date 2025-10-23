@@ -1,8 +1,9 @@
 import streamlit as st
 import subprocess
 
+
 # Define the function to interact with the Ollama model using subprocess
-def get_ollama_response(prompt):
+def get_ollama_response(prompt: str, timeout_seconds: int = 120) -> str:
     try:
         # Run the 'llama3:latest' model and pass the prompt through stdin
         result = subprocess.run(
@@ -11,11 +12,26 @@ def get_ollama_response(prompt):
             text=True,
             capture_output=True,
             encoding='utf-8',  # Force utf-8 encoding
-            errors='ignore'    # Ignore characters that can't be decoded
+            errors='ignore',   # Ignore characters that can't be decoded
+            timeout=timeout_seconds,
+            check=False,
         )
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        return f"Error: {str(e)}"
+
+        # Prefer stderr if the process failed; otherwise use stdout
+        if result.returncode != 0:
+            stderr = (result.stderr or "").strip()
+            stdout = (result.stdout or "").strip()
+            message = stderr or stdout or "Unknown error"
+            return f"Error from ollama (code {result.returncode}): {message}"
+
+        output = (result.stdout or "").strip()
+        if not output:
+            return "Error: Empty response from model."
+        return output
+    except FileNotFoundError:
+        return "Error: 'ollama' CLI not found. Please install Ollama and ensure it's in PATH."
+    except subprocess.TimeoutExpired:
+        return "Error: Request to model timed out."
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -49,9 +65,16 @@ if st.session_state["name"]:
     user_input = st.text_input(f"What would you like to ask today, {st.session_state['name']}?", "", key="user_input")
 
     # If there's user input, get the response from Ollama and update the chat history
-    if user_input and st.button("Send"):
-        ollama_response = get_ollama_response(user_input)
-        st.session_state.chat_history.append({"user": user_input, "bot": ollama_response})
+    if st.button("Send"):
+        trimmed_input = (user_input or "").strip()
+        if not trimmed_input:
+            st.warning("Please enter a message before sending.")
+        else:
+            with st.spinner("Thinking..."):
+                ollama_response = get_ollama_response(trimmed_input)
+            st.session_state.chat_history.append({"user": trimmed_input, "bot": ollama_response})
+            # Clear the input after sending for better UX
+            st.session_state["user_input"] = ""
 
     # Display the chat history interactively
     for i, chat in enumerate(st.session_state.chat_history):
@@ -63,6 +86,7 @@ if st.session_state["name"]:
     # Option to clear chat history
     if st.button("Clear Chat"):
         st.session_state["chat_history"] = []
+        st.session_state["user_input"] = ""
 
 else:
     st.write("Please enter your name to start the conversation.")
