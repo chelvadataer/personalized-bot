@@ -110,22 +110,20 @@ async def get_cabs_from_backend():
 
 async def handle_chat(user_input: str):
     # Optionally ensure MCP is connected for future tool calls
-    try:
-        if not mcp_client.session:
-            # Placeholder: update to your actual backend main path if running MCP via stdio
-            backend_main = os.getenv("CAB_MCP_SERVER", "app/mcp_server.py")
+    # Only attempt MCP stdio connection if an explicit script path is provided
+    backend_main = os.getenv("CAB_MCP_SERVER")
+    if backend_main and not mcp_client.session:
+        try:
             await mcp_client.connect(backend_main)
             _ = await mcp_client.list_tools()
-    except Exception:
-        # Non-fatal; backend HTTP will still work
-        pass
+        except Exception:
+            # Non-fatal; backend HTTP will still work
+            pass
 
     try:
         client = _get_openai_client()
     except Exception:
         # If OpenAI is not configured, return a minimal JSON indicating setup is needed
-        if parsed := None:
-            pass
         return {
             "id": "config-missing",
             "message": "Model not configured. Set OPENAI_API_KEY to enable chat.",
